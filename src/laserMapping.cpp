@@ -62,6 +62,8 @@
 #include <livox_ros_driver2/msg/custom_msg.hpp>
 #include "preprocess.h"
 #include <ikd-Tree/ikd_Tree.h>
+#include <vectornav_msgs/msg/imu.hpp>
+
 
 #define INIT_TIME           (0.1)
 #define LASER_POINT_COV     (0.001)
@@ -343,6 +345,45 @@ void livox_pcl_cbk(const livox_ros_driver2::msg::CustomMsg::UniquePtr msg)
     time_buffer.push_back(last_timestamp_lidar);
     
     s_plot11[scan_count] = omp_get_wtime() - preprocess_start_time;
+    mtx_buffer.unlock();
+    sig_buffer.notify_all();
+}
+
+void vectornav_imu_cbk(const vectornav_msgs::msg::Imu::SharedPtr msg_in) {
+    publish_count ++;
+    // cout<<"IMU got at: "<<get_time_sec(msg_in->header.stamp)<<endl;
+    sensor_msgs::msg::Imu::SharedPtr msg = std::make_shared<sensor_msgs::msg::Imu>();
+    
+    msg->header = msg_in->header;
+    msg->orientation = msg_in->orientation;
+    msg->orientation_covariance = msg_in->orientation_covariance;
+
+    msg->angular_velocity = msg_in->angular_velocity;
+    msg->angular_velocity_covariance = msg_in->angular_velocity_covariance;
+
+    msg->linear_acceleration = msg_in->acceleration;
+    msg->linear_acceleration_covariance = msg_in->acceleration_covariance;
+
+    msg->header.stamp = get_ros_time(get_time_sec(msg_in->header.stamp) - time_diff_lidar_to_imu);
+    if (abs(timediff_lidar_wrt_imu) > 0.1 && time_sync_en)
+    {
+        msg->header.stamp = \
+        rclcpp::Time(timediff_lidar_wrt_imu + get_time_sec(msg_in->header.stamp));
+    }
+
+    double timestamp = get_time_sec(msg->header.stamp);
+
+    mtx_buffer.lock();
+
+    if (timestamp < last_timestamp_imu)
+    {
+        std::cerr << "lidar loop back, clear buffer" << std::endl;
+        imu_buffer.clear();
+    }
+
+    last_timestamp_imu = timestamp;
+
+    imu_buffer.push_back(msg);
     mtx_buffer.unlock();
     sig_buffer.notify_all();
 }
@@ -921,12 +962,16 @@ public:
         if (p_pre->lidar_type == AVIA)
         {
             sub_pcl_livox_ = this->create_subscription<livox_ros_driver2::msg::CustomMsg>(lid_topic, 20, livox_pcl_cbk);
+            std::cout << "AVIA callback" << std::endl;
         }
         else
         {
             sub_pcl_pc_ = this->create_subscription<sensor_msgs::msg::PointCloud2>(lid_topic, rclcpp::SensorDataQoS(), standard_pcl_cbk);
+            std::cout << "Standard pcd callback" << std::endl;
         }
-        sub_imu_ = this->create_subscription<sensor_msgs::msg::Imu>(imu_topic, 10, imu_cbk);
+
+        // sub_imu_ = this->create_subscription<sensor_msgs::msg::Imu>(imu_topic, 10, imu_cbk);
+        sub_vectornav_imu_ = this->create_subscription<vectornav_msgs::msg::Imu>(imu_topic, 10, vectornav_imu_cbk);
         pubLaserCloudFull_ = this->create_publisher<sensor_msgs::msg::PointCloud2>("/cloud_registered", 20);
         pubLaserCloudFull_body_ = this->create_publisher<sensor_msgs::msg::PointCloud2>("/cloud_registered_body", 20);
         pubLaserCloudEffect_ = this->create_publisher<sensor_msgs::msg::PointCloud2>("/cloud_effected", 20);
@@ -1136,6 +1181,7 @@ private:
     rclcpp::Publisher<nav_msgs::msg::Odometry>::SharedPtr pubOdomAftMapped_;
     rclcpp::Publisher<nav_msgs::msg::Path>::SharedPtr pubPath_;
     rclcpp::Subscription<sensor_msgs::msg::Imu>::SharedPtr sub_imu_;
+    rclcpp::Subscription<vectornav_msgs::msg::Imu>::SharedPtr sub_vectornav_imu_;
     rclcpp::Subscription<sensor_msgs::msg::PointCloud2>::SharedPtr sub_pcl_pc_;
     rclcpp::Subscription<livox_ros_driver2::msg::CustomMsg>::SharedPtr sub_pcl_livox_;
 
