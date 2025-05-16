@@ -16,7 +16,8 @@ enum LID_TYPE
   AVIA = 1,
   VELO16,
   OUST64,
-  MID360
+  MID360,
+  XT32
 };  //{1, 2, 3}
 enum TIME_UNIT
 {
@@ -150,6 +151,28 @@ POINT_CLOUD_REGISTER_POINT_STRUCT(livox_ros::LivoxPointXyzitl,
     (uint8_t, line, line)
 )
 
+// Hesai XT32
+struct PointXYZIT {
+    PCL_ADD_POINT4D
+    float intensity;
+    double timestamp;
+    uint16_t ring;
+    EIGEN_MAKE_ALIGNED_OPERATOR_NEW
+} EIGEN_ALIGN16;
+
+POINT_CLOUD_REGISTER_POINT_STRUCT(
+    PointXYZIT,
+    (float, x, x)
+    (float, y, y)
+    (float, z, z)
+    (float, intensity, intensity)
+    (double, timestamp, timestamp)
+    (std::uint16_t, ring, ring)
+)
+
+typedef PointXYZIT PPoint;
+typedef pcl::PointCloud<PPoint> PPointCloud;
+
 class Preprocess
 {
   public:
@@ -177,6 +200,7 @@ private:
   void oust64_handler(const sensor_msgs::msg::PointCloud2::UniquePtr &msg);
   void velodyne_handler(const sensor_msgs::msg::PointCloud2::UniquePtr &msg);
   void mid360_handler(const sensor_msgs::msg::PointCloud2::UniquePtr &msg);
+  void xt32_handler(const sensor_msgs::msg::PointCloud2::UniquePtr &msg);
   void default_handler(const sensor_msgs::msg::PointCloud2::UniquePtr &msg);
   void give_feature(PointCloudXYZI &pl, vector<orgtype> &types);
   void pub_func(PointCloudXYZI &pl, const rclcpp::Time &ct);
