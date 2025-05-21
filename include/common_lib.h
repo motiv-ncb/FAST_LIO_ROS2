@@ -228,14 +228,14 @@ bool esti_plane(Matrix<T, 4, 1> &pca_result, const PointVector &point, const T &
     A.setZero();
     b.setOnes();
     b *= -1.0f;
-
+ 
     for (int j = 0; j < NUM_MATCH_POINTS; j++)
     {
         A(j,0) = point[j].x;
         A(j,1) = point[j].y;
         A(j,2) = point[j].z;
     }
-
+ 
     Matrix<T, 3, 1> normvec = A.colPivHouseholderQr().solve(b);
 
     T n = normvec.norm();
@@ -244,13 +244,13 @@ bool esti_plane(Matrix<T, 4, 1> &pca_result, const PointVector &point, const T &
     pca_result(2) = normvec(2) / n;
     pca_result(3) = 1.0 / n;
 
-    for (int j = 0; j < NUM_MATCH_POINTS; j++)
-    {
-        if (fabs(pca_result(0) * point[j].x + pca_result(1) * point[j].y + pca_result(2) * point[j].z + pca_result(3)) > threshold)
-        {
-            return false;
-        }
-    }
+    // for (int j = 0; j < NUM_MATCH_POINTS; j++)
+    // {
+    //     if (fabs(pca_result(0) * point[j].x + pca_result(1) * point[j].y + pca_result(2) * point[j].z + pca_result(3)) > threshold)
+    //     {
+    //         return false;
+    //     }
+    // }
     return true;
 }
 

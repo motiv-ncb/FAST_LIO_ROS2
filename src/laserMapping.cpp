@@ -99,7 +99,7 @@ int    iterCount = 0, feats_down_size = 0, NUM_MAX_ITERATIONS = 0, laserCloudVal
 bool   point_selected_surf[100000] = {0};
 bool   lidar_pushed, flg_first_scan = true, flg_exit = false, flg_EKF_inited;
 bool   scan_pub_en = false, dense_pub_en = false, scan_body_pub_en = false;
-bool    is_first_lidar = true;
+bool    is_first_lidar = true; double inliers_threshold = 0.3;
 
 vector<vector<int>>  pointSearchInd_surf; 
 vector<BoxPointType> cub_needrm;
@@ -554,7 +554,7 @@ void publish_frame_world(rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::Share
     /**************** save map ****************/
     /* 1. make sure you have enough memories
     /* 2. noted that pcd save will influence the real-time performences **/
-    /*
+    
     if (pcd_save_en)
     {
         int size = feats_undistort->points.size();
@@ -581,7 +581,7 @@ void publish_frame_world(rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::Share
             scan_wait_num = 0;
         }
     }
-    */
+    
 }
 
 void publish_frame_body(rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr pubLaserCloudFull_body)
@@ -758,22 +758,24 @@ void h_share_model(state_ikfom &s, esekfom::dyn_share_datastruct<double> &ekfom_
         if (esti_plane(pabcd, points_near, 0.1f))
         {
             float pd2 = pabcd(0) * point_world.x + pabcd(1) * point_world.y + pabcd(2) * point_world.z + pabcd(3);
-            float s = 1 - 0.9 * fabs(pd2) / sqrt(p_body.norm());
+            const float pd2abs = abs(pd2);
+            // float s = 1 - 0.9 * fabs(pd2) / sqrt(p_body.norm());
 
-            if (s > 0.9)
-            {
+            // if (pd2abs <= inliers_threshold)
+            // {
                 point_selected_surf[i] = true;
                 normvec->points[i].x = pabcd(0);
                 normvec->points[i].y = pabcd(1);
                 normvec->points[i].z = pabcd(2);
                 normvec->points[i].intensity = pd2;
-                res_last[i] = abs(pd2);
-            }
+                res_last[i] = pd2abs;
+            // }
         }
     }
     
     effct_feat_num = 0;
-
+    std::size_t inliers_n = 0;
+    double rmse = 0.0;
     for (int i = 0; i < feats_down_size; i++)
     {
         if (point_selected_surf[i])
@@ -782,7 +784,26 @@ void h_share_model(state_ikfom &s, esekfom::dyn_share_datastruct<double> &ekfom_
             corr_normvect->points[effct_feat_num] = normvec->points[i];
             total_residual += res_last[i];
             effct_feat_num ++;
+
+            if (res_last[i] <= inliers_threshold) {
+                inliers_n++;
+                rmse += res_last[i]*res_last[i];
+            }
         }
+    }
+
+    if (inliers_n > 0) {
+        rmse = std::sqrt(rmse/inliers_n);
+    }
+    else {
+        rmse = 0.0;
+    }
+
+    const double fitness = static_cast<double>(inliers_n) / feats_down_size;
+
+    if (fitness < 0.7) { 
+        std::cerr << "Not enough overlaping points with (" << inliers_threshold << ")" << std::endl;
+        std::cout << "fitness: " << fitness << ", rmse: " << rmse << std::endl; 
     }
 
     if (effct_feat_num < 1)
@@ -861,6 +882,7 @@ public:
         this->declare_parameter<double>("mapping.acc_cov", 0.1);
         this->declare_parameter<double>("mapping.b_gyr_cov", 0.0001);
         this->declare_parameter<double>("mapping.b_acc_cov", 0.0001);
+        this->declare_parameter<double>("mapping.inliers_threshold", 0.3);
         this->declare_parameter<double>("preprocess.blind", 0.01);
         this->declare_parameter<int>("preprocess.lidar_type", AVIA);
         this->declare_parameter<int>("preprocess.scan_line", 16);
@@ -897,6 +919,7 @@ public:
         this->get_parameter_or<double>("mapping.acc_cov",acc_cov,0.1);
         this->get_parameter_or<double>("mapping.b_gyr_cov",b_gyr_cov,0.0001);
         this->get_parameter_or<double>("mapping.b_acc_cov",b_acc_cov,0.0001);
+        this->get_parameter_or<double>("mapping.inliers_threshold", inliers_threshold, 0.3);
         this->get_parameter_or<double>("preprocess.blind", p_pre->blind, 0.01);
         this->get_parameter_or<int>("preprocess.lidar_type", p_pre->lidar_type, AVIA);
         this->get_parameter_or<int>("preprocess.scan_line", p_pre->N_SCANS, 16);
